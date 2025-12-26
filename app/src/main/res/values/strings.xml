@@ -112,6 +112,11 @@
     <string name="concurrent_download_num">%d thread(s) would be used to download DASH/HLS native video concurrently.</string>
     <string name="options">Options</string>
     <string name="additional_settings">Additional settings</string>
+    <string name="yt_dlp_stable_url">Stable release URL</string>
+    <string name="invalid_release_url">Invalid URL — must be a GitHub releases `api.github.com/repos/.../releases/latest` URL</string>
+    <string name="yt_dlp_custom_source_warning">Warning: downloading yt-dlp directly from a branch or raw URL will execute untrusted code. Only proceed if you trust the source.</string>
+    <string name="yt_dlp_trust_checkbox">I understand the risks and trust this source</string>
+    <string name="please_confirm_trust">Please confirm you trust this source before saving</string>
     <string name="share_fail_msg">Unable to match URL from shared content</string>
     <string name="share_success_msg">Reading video link from shared content…</string>
     <string name="show_more_actions">Show more actions</string>

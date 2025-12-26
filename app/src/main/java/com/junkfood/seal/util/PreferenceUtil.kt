@@ -115,6 +115,7 @@ private const val DOWNLOAD_TYPE = "download_type"
 const val YT_DLP_UPDATE_CHANNEL = "yt-dlp_update_channel"
 const val YT_DLP_UPDATE_TIME = "yt-dlp_last_update"
 const val YT_DLP_UPDATE_INTERVAL = "yt-dlp_update_interval"
+const val YT_DLP_STABLE_URL = "yt-dlp_stable_url"
 
 private const val INTERVAL_DAY = 86_400_000L
 private const val INTERVAL_WEEK = 86_400_000L * 7
@@ -154,6 +155,7 @@ const val PRE_RELEASE = 1
 
 const val YT_DLP_STABLE = 0
 const val YT_DLP_NIGHTLY = 1
+const val YT_DLP_STABLE_DEFAULT = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 
 const val OPUS = 1
 const val M4A = 2
@@ -207,6 +209,7 @@ private val StringPreferenceDefaults =
         SUBTITLE_LANGUAGE to "en.*,.*-orig",
         OUTPUT_TEMPLATE to DownloadUtil.OUTPUT_TEMPLATE_ID,
         CUSTOM_OUTPUT_TEMPLATE to DownloadUtil.OUTPUT_TEMPLATE_ID,
+        YT_DLP_STABLE_URL to YT_DLP_STABLE_DEFAULT,
     )
 
 private val BooleanPreferenceDefaults =

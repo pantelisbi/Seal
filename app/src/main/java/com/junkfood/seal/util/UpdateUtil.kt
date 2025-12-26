@@ -11,6 +11,7 @@ import com.junkfood.seal.App.Companion.context
 import com.junkfood.seal.R
 import com.junkfood.seal.util.FileUtil.getFileProvider
 import com.junkfood.seal.util.PreferenceUtil.getInt
+import com.junkfood.seal.util.PreferenceUtil.getString
 import com.junkfood.seal.util.PreferenceUtil.updateLong
 import com.yausername.youtubedl_android.YoutubeDL
 import java.io.File
@@ -28,10 +29,15 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
+import okio.BufferedSink
+import okio.buffer
+import okio.sink
+import java.net.URL
+import java.util.Locale
 
 object UpdateUtil {
 
-    private const val OWNER = "JunkFood02"
+    private const val OWNER = "pantelisbi"
     private const val REPO = "Seal"
     private const val ARM64 = "arm64-v8a"
     private const val ARM32 = "armeabi-v7a"
@@ -53,26 +59,96 @@ object UpdateUtil {
 
     private val jsonFormat = Json { ignoreUnknownKeys = true }
 
-    suspend fun updateYtDlp(): YoutubeDL.UpdateStatus? =
-        withContext(Dispatchers.IO) {
-            val channel =
-                when (YT_DLP_UPDATE_CHANNEL.getInt()) {
-                    YT_DLP_NIGHTLY -> YoutubeDL.UpdateChannel.NIGHTLY
-                    else -> YoutubeDL.UpdateChannel.STABLE
-                }
+    private fun repoBranchToRawUrl(input: String): String? {
+        // owner/repo@branch -> https://raw.githubusercontent.com/owner/repo/branch/yt-dlp
+        val pattern = Regex("^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)@(.+)$")
+        val match = pattern.find(input) ?: return null
+        val (owner, repo, branch) = match.destructured
+        return "https://raw.githubusercontent.com/${owner}/${repo}/${branch}/yt-dlp"
+    }
 
-            YoutubeDL.getInstance()
-                .updateYoutubeDL(appContext = context, updateChannel = channel)
-                .also {
-                    if (it == YoutubeDL.UpdateStatus.DONE) {
-                        YoutubeDL.getInstance().version(context)?.let {
-                            PreferenceUtil.encodeString(YT_DLP_VERSION, it)
-                        }
-                    }
-                    val now = System.currentTimeMillis()
-                    YT_DLP_UPDATE_TIME.updateLong(now)
-                }
+    private fun isReleasesApiUrl(url: String): Boolean {
+        return url.contains("api.github.com") && url.contains("/releases/")
+    }
+
+    private fun isRawGithubUrl(url: String): Boolean {
+        return url.startsWith("https://raw.githubusercontent.com/")
+    }
+
+    private fun getYtdlpBinaryFile(appContext: Context): File {
+        val baseDir = File(appContext.noBackupFilesDir, YoutubeDL.baseName)
+        val ytdlpDir = File(baseDir, YoutubeDL.ytdlpDirName)
+        if (!ytdlpDir.exists()) ytdlpDir.mkdirs()
+        return File(ytdlpDir, YoutubeDL.ytdlpBin)
+    }
+
+    private fun writeBytesToFile(bytes: ByteArray, file: File) {
+        file.sink().buffer().use { sink: BufferedSink -> sink.write(bytes) }
+        file.setExecutable(true, false)
+    }
+
+    private fun downloadBytes(url: String): ByteArray? {
+        val request = Request.Builder().url(url).build()
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            return resp.body?.bytes()
         }
+    }
+
+    private suspend fun downloadAndInstallYtdlp(appContext: Context, sourceUrl: String): YoutubeDL.UpdateStatus? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val finalUrl = repoBranchToRawUrl(sourceUrl) ?: sourceUrl
+                val bytes = downloadBytes(finalUrl) ?: return@withContext null
+                val ytdlpFile = getYtdlpBinaryFile(appContext)
+                writeBytesToFile(bytes, ytdlpFile)
+
+                // Refresh version from library
+                YoutubeDL.getInstance().version(appContext)?.let { PreferenceUtil.encodeString(YT_DLP_VERSION, it) }
+                return@withContext YoutubeDL.UpdateStatus.DONE
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return@withContext null
+            }
+        }
+    }
+
+    suspend fun updateYtDlp(channelSelection: Int, stableUrl: String): YoutubeDL.UpdateStatus? =
+        withContext(Dispatchers.IO) {
+            when (channelSelection) {
+                YT_DLP_NIGHTLY -> {
+                    val result =
+                        YoutubeDL.getInstance()
+                            .updateYoutubeDL(appContext = context, updateChannel = YoutubeDL.UpdateChannel.NIGHTLY)
+                    if (result == YoutubeDL.UpdateStatus.DONE) {
+                        YoutubeDL.getInstance().version(context)?.let { PreferenceUtil.encodeString(YT_DLP_VERSION, it) }
+                    }
+                    YT_DLP_UPDATE_TIME.updateLong(System.currentTimeMillis())
+                    return@withContext result
+                }
+                else -> {
+                    // Stable branch: support releases API, repo@branch shorthand, and raw URLs
+                    return@withContext if (isReleasesApiUrl(stableUrl)) {
+                        val result =
+                            YoutubeDL.getInstance()
+                                .updateYoutubeDL(appContext = context, updateChannel = YoutubeDL.UpdateChannel(stableUrl))
+                        if (result == YoutubeDL.UpdateStatus.DONE) {
+                            YoutubeDL.getInstance().version(context)?.let { PreferenceUtil.encodeString(YT_DLP_VERSION, it) }
+                        }
+                        YT_DLP_UPDATE_TIME.updateLong(System.currentTimeMillis())
+                        result
+                    } else {
+                        // raw URL or repo@branch shorthand
+                        val result = downloadAndInstallYtdlp(context, stableUrl)
+                        if (result == YoutubeDL.UpdateStatus.DONE) YT_DLP_UPDATE_TIME.updateLong(System.currentTimeMillis())
+                        result
+                    }
+                }
+            }
+        }
+
+    suspend fun updateYtDlp(): YoutubeDL.UpdateStatus? =
+        updateYtDlp(YT_DLP_UPDATE_CHANNEL.getInt(), YT_DLP_STABLE_URL.getString())
 
     private fun getLatestRelease(): Release =
         client.newCall(requestForReleases).execute().body.use {

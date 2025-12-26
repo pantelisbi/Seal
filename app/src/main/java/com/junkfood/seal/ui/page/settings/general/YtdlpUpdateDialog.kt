@@ -15,6 +15,9 @@ import androidx.compose.material.icons.outlined.SyncAlt
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.TextButton
+import com.junkfood.seal.util.ToastUtil
+import com.junkfood.seal.util.YT_DLP_STABLE_DEFAULT
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
@@ -36,6 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import com.junkfood.seal.R
 import com.junkfood.seal.ui.common.booleanState
 import com.junkfood.seal.ui.common.intState
@@ -53,6 +59,11 @@ import com.junkfood.seal.util.YT_DLP_NIGHTLY
 import com.junkfood.seal.util.YT_DLP_STABLE
 import com.junkfood.seal.util.YT_DLP_UPDATE_CHANNEL
 import com.junkfood.seal.util.YT_DLP_UPDATE_INTERVAL
+import com.junkfood.seal.util.YT_DLP_STABLE_URL
+import com.junkfood.seal.util.PreferenceUtil.getString
+import com.junkfood.seal.util.PreferenceUtil.updateString
+import com.junkfood.seal.App
+import com.junkfood.seal.util.YT_DLP_VERSION
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -100,6 +111,19 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
     var ytdlpUpdateChannel by YT_DLP_UPDATE_CHANNEL.intState
     var ytdlpAutoUpdate by YT_DLP_AUTO_UPDATE.booleanState
     var updateInterval by remember { mutableLongStateOf(YT_DLP_UPDATE_INTERVAL.getLong()) }
+    var stableUrl by remember { mutableStateOf(YT_DLP_STABLE_URL.getString()) }
+    var stableUrlError by remember { mutableStateOf(false) }
+    var trustSource by remember { mutableStateOf(false) }
+
+    fun isValidReleaseUrl(url: String): Boolean {
+        val regex = Regex("^https://api\\.github\\.com/repos/[^/]+/[^/]+/releases/latest$")
+        return regex.matches(url)
+    }
+
+    fun looksLikeRepoBranchOrRaw(url: String): Boolean {
+        val repoBranch = Regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@.+$")
+        return repoBranch.matches(url) || url.startsWith("https://raw.githubusercontent.com/")
+    }
 
     SealDialog(
         modifier = modifier,
@@ -206,7 +230,132 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
                         }
                     }
                 }
+                item {
+                    if (ytdlpUpdateChannel == YT_DLP_STABLE) {
+                        OutlinedTextField(
+                            value = stableUrl,
+                            onValueChange = {
+                                stableUrl = it
+                                stableUrlError = !isValidReleaseUrl(it)
+                            },
+                            label = { Text(text = stringResource(id = R.string.yt_dlp_stable_url)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                            singleLine = true,
+                            isError = stableUrlError,
+                        )
+
+                        if (stableUrlError) {
+                            Text(
+                                text = stringResource(id = R.string.invalid_release_url),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 24.dp, top = 6.dp)
+                            )
+                        }
+
+                        // Show warning and trust checkbox if stableUrl is not a releases API URL
+                        if (!isValidReleaseUrl(stableUrl)) {
+                            Text(
+                                text = stringResource(id = R.string.yt_dlp_custom_source_warning),
+                                color = MaterialTheme.colorScheme.tertiary,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 24.dp, top = 6.dp)
+                            )
+
+                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = trustSource,
+                                    onCheckedChange = { trustSource = it }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = stringResource(id = R.string.yt_dlp_trust_checkbox))
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+                            Spacer(modifier = Modifier.weight(1f))
+                            TextButton(onClick = {
+                                stableUrl = YT_DLP_STABLE_DEFAULT
+                                stableUrlError = false
+                                trustSource = false
+                            }) {
+                                Text(text = stringResource(id = R.string.reset))
+                            }
+                        }
+
+                        // Manual update button
+                        var isUpdating by remember { mutableStateOf(false) }
+                        val scope = rememberCoroutineScope()
+
+                        Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            if (isUpdating) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            }
+
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isUpdating = true
+                                        runCatching {
+                                                UpdateUtil.updateYtDlp(ytdlpUpdateChannel, stableUrl)
+                                            }
+                                            .onFailure { th ->
+                                                th.printStackTrace()
+                                                App.context.makeToast(R.string.yt_dlp_update_fail)
+                                            }
+                                            .onSuccess {
+                                                App.context.makeToast(App.context.getString(R.string.yt_dlp_up_to_date) + " (${YT_DLP_VERSION.getString()})")
+                                            }
+                                        isUpdating = false
+                                    }
+                                },
+                                enabled = !isUpdating && (isValidReleaseUrl(stableUrl) || (looksLikeRepoBranchOrRaw(stableUrl) && trustSource)),
+                            ) {
+                                Text(text = stringResource(id = R.string.ytdlp_update))
+                            }
+                        }
+                    }
+                }
             }
         },
-    )
+        confirmButton = {
+            ConfirmButton {
+                if (ytdlpUpdateChannel == YT_DLP_STABLE) {
+                    if (!isValidReleaseUrl(stableUrl) && !looksLikeRepoBranchOrRaw(stableUrl)) {
+                        ToastUtil.makeToast(R.string.invalid_release_url)
+                        return@ConfirmButton
+                    }
+                    if (looksLikeRepoBranchOrRaw(stableUrl) && !trustSource) {
+                        ToastUtil.makeToast(R.string.please_confirm_trust)
+                        return@ConfirmButton
+                    }
+                }
+
+                YT_DLP_AUTO_UPDATE.updateBoolean(ytdlpAutoUpdate)
+                YT_DLP_UPDATE_CHANNEL.updateInt(ytdlpUpdateChannel)
+                YT_DLP_UPDATE_INTERVAL.updateLong(updateInterval)
+                YT_DLP_STABLE_URL.updateString(stableUrl)
+                onDismissRequest()
+            }
+        },
+        dismissButton = { DismissButton { onDismissRequest() } },
+        title = { Text(text = stringResource(id = R.string.update)) },
+        icon = { Icon(Icons.Outlined.SyncAlt, null) },
+        text = {
+            LazyColumn() {
+                item {
+                    Text(
+                        text = stringResource(id = R.string.update_channel),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                                .padding(top = 16.dp, bottom = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
 }
