@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -64,9 +65,8 @@ import com.junkfood.seal.util.PreferenceUtil.getString
 import com.junkfood.seal.util.PreferenceUtil.updateString
 import com.junkfood.seal.App
 import com.junkfood.seal.util.YT_DLP_VERSION
-import kotlin.collections.component1
-import kotlin.collections.component2
-import kotlin.collections.iterator
+import com.junkfood.seal.util.UpdateUtil
+import kotlinx.coroutines.launch
 
 @Composable
 private fun DialogSingleChoiceItem(
@@ -128,15 +128,6 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
     SealDialog(
         modifier = modifier,
         onDismissRequest = onDismissRequest,
-        confirmButton = {
-            ConfirmButton {
-                YT_DLP_AUTO_UPDATE.updateBoolean(ytdlpAutoUpdate)
-                YT_DLP_UPDATE_CHANNEL.updateInt(ytdlpUpdateChannel)
-                YT_DLP_UPDATE_INTERVAL.updateLong(updateInterval)
-                onDismissRequest()
-            }
-        },
-        dismissButton = { DismissButton { onDismissRequest() } },
         title = { Text(text = stringResource(id = R.string.update)) },
         icon = { Icon(Icons.Outlined.SyncAlt, null) },
         text = {
@@ -269,7 +260,7 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
                                     checked = trustSource,
                                     onCheckedChange = { trustSource = it }
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.size(8.dp))
                                 Text(text = stringResource(id = R.string.yt_dlp_trust_checkbox))
                             }
                         }
@@ -301,8 +292,8 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
                                     scope.launch {
                                         isUpdating = true
                                         runCatching {
-                                                UpdateUtil.updateYtDlp(ytdlpUpdateChannel, stableUrl)
-                                            }
+                                            UpdateUtil.updateYtDlp(ytdlpUpdateChannel, stableUrl)
+                                        }
                                             .onFailure { th ->
                                                 th.printStackTrace()
                                                 App.context.makeToast(R.string.yt_dlp_update_fail)
@@ -343,19 +334,5 @@ fun YtdlpUpdateChannelDialog(modifier: Modifier = Modifier, onDismissRequest: ()
             }
         },
         dismissButton = { DismissButton { onDismissRequest() } },
-        title = { Text(text = stringResource(id = R.string.update)) },
-        icon = { Icon(Icons.Outlined.SyncAlt, null) },
-        text = {
-            LazyColumn() {
-                item {
-                    Text(
-                        text = stringResource(id = R.string.update_channel),
-                        modifier =
-                            Modifier.fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                                .padding(top = 16.dp, bottom = 8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
+    )
 }
